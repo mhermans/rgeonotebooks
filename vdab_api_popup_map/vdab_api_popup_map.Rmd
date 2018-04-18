@@ -1,0 +1,143 @@
+---
+title: "R tidyverse - VDAB open data example map"
+author: "Maarten Hermans - @hermansm"
+output: 
+  html_notebook: 
+    toc: yes
+    toc_float: yes
+---
+
+# Load required libraries
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(sf)
+library(jsonlite)
+library(leaflet)
+library(stringr)
+library(htmlwidgets)
+
+# if needed, run first:
+# install.packages("BelgiumMaps.StatBel", repos = "http://www.datatailor.be/rcube", type = "source")
+library(BelgiumMaps.StatBel) 
+```
+
+# Load/fetch requried data
+
+Used in example:
+
+* [VDAB office-locations as open data](https://www.vdab.be/trends/open_data/locaties) (JSON-file).
+* Administrative boundaries for Belgian *arrondissementen*, courtesy of the [BelgiumMaps.StatBel](https://github.com/bnosac/BelgiumMaps.StatBel) R package. 
+
+## Load arrondissement borders
+
+```{r, warning=FALSE, message=FALSE}
+# load district/arrondissement spatial structure from package BelgiumMaps.StatBel
+data('BE_ADMIN_DISTRICT') 
+
+# convert to simple features dataset-structure
+arronds = st_as_sf(BE_ADMIN_DISTRICT) 
+
+# filter on on arrondissementen located in Flanders and Brussels
+arronds = arronds %>%
+  filter(TX_RGN_DESCR_NL %in% c('Vlaams Gewest', 'Brussels Hoofdstedelijk Gewest'))
+```
+
+```{r}
+# rough plot, to verify that spatial data is as expected
+plot(arronds, max.plot = 1)
+```
+
+## Fetch open data VDAB office locations 
+
+```{r}
+# fetch open data in JSON-format
+vdab.kantoren = as_tibble(fromJSON('http://opendata.vdab.be/vdab/locaties.json'))
+vdab.kantoren # dataset with office locations, including coordinates
+```
+
+
+## Describe and change VDAB-data
+
+
+```{r}
+# count te different types of VDAB offices
+vdab.kantoren %>%
+  group_by(typelocatie) %>%
+  tally()
+```
+
+
+```{r}
+vdab.kantoren = vdab.kantoren %>%
+  mutate(
+    # add a variable 'popup' with the the HTML-snippet per office,
+    # which  will be shown in the map-popup
+    popup = str_glue("<h3>{title}</h3><br /><b>Type: </b>{typelocatie}<br /><b>Adres</b>:  {straatNr} {plaats}<br /><b>Teleloon</b>: {telefoonnummer}"),
+    
+    # make sure that coordinates are not a character, but numeric variables
+    lat = as.numeric(lat),
+    lon = as.numeric(lon))
+```
+
+
+
+# Construct interactive map
+
+## Minimal map example
+
+```{r, message=FALSE}
+# basic interactive map with a oneliner
+# (width-argument not needed, only for online-output)
+leaflet(vdab.kantoren, width = '100%') %>% addTiles() %>% addMarkers()
+```
+
+## Styled map example w/t popups
+
+Styling:
+
+* Popups with VDAB-office information.
+* Custom tile background
+* Custom color & symbol markers, based on discrete values (office-type)
+* Overlay of *arrondissement*-polygons: now grey/white-styled, could be colored based on e.g. unemployment-rate. 
+
+```{r}
+# create two icons with different color & symbol for the two types of VDAB-offices
+# for different symbols, cf. https://rstudio.github.io/leaflet/markers.html 
+kantoor_icons <- awesomeIconList(
+  'kantoor met onthaal' = makeAwesomeIcon(
+    icon = "user", 
+    library = "fa", 
+    markerColor = "blue"),
+  'opleidingscentrum' = makeAwesomeIcon(
+    icon = "graduation-cap", 
+    library = "fa", 
+    markerColor = "red"))
+```
+
+```{r}
+m.kantoren = leaflet(arronds, width = '100%') %>% 
+  # add minimalistic-style map blackground tiles
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  
+  # add grey arrondissement polygons w/t white border
+  addPolygons(fillColor =  'grey20', color = 'white') %>% 
+  
+  # add custom styled markers w/t popups
+  addAwesomeMarkers(
+    data = vdab.kantoren,
+    lng = ~lon, lat = ~lat,
+    icon = ~kantoor_icons[typelocatie],
+    popup = ~popup)
+```
+
+```{r}
+m.kantoren
+```
+
+# Save stand-alone map
+
+```{r}
+saveWidget(m.kantoren, 'vdab_api_popup_map.html')
+```
+
