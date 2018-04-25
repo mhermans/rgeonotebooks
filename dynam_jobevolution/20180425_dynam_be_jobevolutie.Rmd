@@ -1,0 +1,96 @@
+---
+title: "Dynam jobevolutie kaartjes"
+output: html_notebook
+---
+
+```{r, message=FALSE, warning=FALSE}
+library(here)
+library(readxl)
+library(dplyr)
+library(BelgiumMaps.StatBel)
+library(sf)
+library(tmap)
+library(leaflet)
+library(leaflet.minicharts)
+```
+
+```{r}
+dynam.prov = read_excel(
+    '20180425_dynam_be_jobdata_origineel.xlsx', 'Sheet2',
+    skip = 1,  col_names = c(
+      'province_lbl', 'province_nis_code', 
+      'absoluut_bruto_toename', 'absoluut_bruto_afname', 'absoluut_netto', 'delme',
+      'delmetoo', 'bruto_toename_pct', 'bruto_afname_pct', 'netto_pct')) %>%
+  select(-delme, -delmetoo)
+```
+
+```{r}
+dynam.prov
+```
+
+
+```{r}
+dynam.prov = dynam.prov %>%
+  mutate(absoluut_bruto_afname = absoluut_bruto_afname*-1)
+```
+
+```{r}
+data('BE_ADMIN_PROVINCE') 
+# convert to simple features dataset-structure
+provinces = st_as_sf(BE_ADMIN_PROVINCE) 
+```
+
+```{r}
+provinces = provinces %>%
+  mutate(CD_PROV_REFNIS = as.character(CD_PROV_REFNIS)) %>%
+  left_join(dynam.prov, c('CD_PROV_REFNIS' = 'province_nis_code'))
+```
+
+```{r}
+pal <- colorBin("Greens", domain = dynam.prov$netto_pct)
+```
+
+
+```{r}
+m.prov = leaflet(provinces, width = '100%') %>% 
+  # add minimalistic-style map blackground tiles
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  
+  # add grey arrondissement polygons w/t white border
+  addPolygons(
+    weight = 2,
+    # highlight = highlightOptions(
+    #   weight = 5,
+    #   color = "#666",
+    #   dashArray = "",
+    #   fillOpacity = 0.7,
+    #   bringToFront = TRUE),
+    opacity = 1,
+    dashArray = "3",
+    fillColor = ~pal(netto_pct), color = 'white')
+```
+
+```{r, warning=FALSE}
+provinces_coords = st_coordinates(st_centroid(provinces))
+```
+
+```{r}
+d.abs = dynam.prov %>%
+  select(absoluut_bruto_toename, absoluut_bruto_afname, absoluut_netto) %>%
+  rename(
+    'Jobgroei' = absoluut_bruto_toename,
+    'Jobverlies' = absoluut_bruto_afname,
+    'Netto jobevolutie' = absoluut_netto)
+```
+
+```{r}
+colors <- c("#7cae00", "#f8766d", "#c77cff")
+m.prov %>%
+  addMinicharts(
+    provinces_coords[,1], provinces_coords[,2],
+    chartdata = d.abs,
+    colorPalette = colors,
+    width = 45, height = 45
+  )
+```
+
