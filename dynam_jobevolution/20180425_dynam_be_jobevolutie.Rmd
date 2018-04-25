@@ -1,6 +1,9 @@
 ---
 title: "Dynam jobevolutie kaartjes"
-output: html_notebook
+output: 
+  html_notebook: 
+    code_folding: show
+    theme: lumen
 ---
 
 ```{r, message=FALSE, warning=FALSE}
@@ -12,6 +15,7 @@ library(sf)
 library(tmap)
 library(leaflet)
 library(leaflet.minicharts)
+library(htmltools)
 ```
 
 ```{r}
@@ -29,15 +33,30 @@ dynam.prov
 ```
 
 
-```{r}
+```{r, warning=FALSE}
 dynam.prov = dynam.prov %>%
-  mutate(absoluut_bruto_afname = absoluut_bruto_afname*-1)
+  mutate(
+    netto_pct = netto_pct*100,
+    absoluut_bruto_afname = absoluut_bruto_afname*-1)
 ```
 
 ```{r}
 data('BE_ADMIN_PROVINCE') 
+data("BE_ADMIN_REGION")
+
 # convert to simple features dataset-structure
 provinces = st_as_sf(BE_ADMIN_PROVINCE) 
+regions = st_as_sf(BE_ADMIN_REGION) 
+
+# Spatial object for Brussels-region is not included in provences, add from region
+provinces = rbind(
+  provinces %>% select(CD_PROV_REFNIS, TX_PROV_DESCR_NL),
+  regions %>%
+    filter(TX_RGN_DESCR_NL == "Brussels Hoofdstedelijk Gewest") %>%
+    mutate(CD_RGN_REFNIS = '04000') %>%
+    select(
+      CD_PROV_REFNIS = CD_RGN_REFNIS,
+      TX_PROV_DESCR_NL = TX_RGN_DESCR_NL))
 ```
 
 ```{r}
@@ -46,51 +65,63 @@ provinces = provinces %>%
   left_join(dynam.prov, c('CD_PROV_REFNIS' = 'province_nis_code'))
 ```
 
+
 ```{r}
 pal <- colorBin("Greens", domain = dynam.prov$netto_pct)
 ```
 
-
-```{r}
-m.prov = leaflet(provinces, width = '100%') %>% 
-  # add minimalistic-style map blackground tiles
-  addProviderTiles(providers$CartoDB.Positron) %>% 
-  
-  # add grey arrondissement polygons w/t white border
-  addPolygons(
-    weight = 2,
-    # highlight = highlightOptions(
-    #   weight = 5,
-    #   color = "#666",
-    #   dashArray = "",
-    #   fillOpacity = 0.7,
-    #   bringToFront = TRUE),
-    opacity = 1,
-    dashArray = "3",
-    fillColor = ~pal(netto_pct), color = 'white')
-```
-
 ```{r, warning=FALSE}
+# get centroid coordinates for each province to plot barchart there
 provinces_coords = st_coordinates(st_centroid(provinces))
 ```
 
 ```{r}
 d.abs = dynam.prov %>%
-  select(absoluut_bruto_toename, absoluut_bruto_afname, absoluut_netto) %>%
-  rename(
+  select(
     'Jobgroei' = absoluut_bruto_toename,
     'Jobverlies' = absoluut_bruto_afname,
     'Netto jobevolutie' = absoluut_netto)
 ```
 
+
+```{r results="asis", echo=FALSE}
+cat("
+<style>
+.leaflet-container {
+    background: #FFF;
+}
+</style>
+")
+```
+
 ```{r}
+m.prov = leaflet(provinces, width = '100%') %>% 
+  # add grey arrondissement polygons w/t white border
+  addPolygons(
+    weight = 2,
+    opacity = 1,
+    dashArray = "3",
+    fillColor = ~pal(netto_pct), color = 'white') %>% 
+  addLegend(pal = pal, values = ~absoluut_netto, opacity = 0.7,
+            title = 'Netto jobevolutie (%)',
+  position = "bottomright")
+
 colors <- c("#7cae00", "#f8766d", "#c77cff")
-m.prov %>%
+m.prov = m.prov %>%
   addMinicharts(
     provinces_coords[,1], provinces_coords[,2],
     chartdata = d.abs,
     colorPalette = colors,
-    width = 45, height = 45
-  )
+    width = 45, height = 45)
+
+map_title <- tags$div(
+   HTML('<b>Bruto en netto jobevolutie per provincie, 2017-2018 (<a href="https://dynamresearch.be/">DynaM</a>)</b>')
+ )  
+
+m.prov = m.prov %>% 
+  addControl(map_title, position = "bottomleft")
+
+m.prov
+
 ```
 
