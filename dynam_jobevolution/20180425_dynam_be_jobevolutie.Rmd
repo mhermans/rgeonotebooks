@@ -43,7 +43,7 @@ dynam.prov  <- dynam.prov %>%
 
 dynam.prov = dynam.prov %>%
   mutate(
-    province_lbl_pct = str_c(province_lbl, '  (', str_sub(as.character(netto_pct*100),1,4), '%', ')'))
+    province_lbl_pct = str_c(province_lbl, '    ', str_sub(as.character(netto_pct*100),1,4), '%'))
 
 province_lbl_ordered <- dynam.prov %>%
   arrange(netto_pct) %>% # rangschik procentuele of absolute groei
