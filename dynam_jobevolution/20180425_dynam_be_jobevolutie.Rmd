@@ -16,6 +16,8 @@ library(tmap)
 library(leaflet)
 library(leaflet.minicharts)
 library(htmltools)
+library(ggplot2)
+library(stringr)
 ```
 
 ```{r}
@@ -30,6 +32,60 @@ dynam.prov = read_excel(
 
 ```{r}
 dynam.prov
+```
+
+```{r, warning=FALSE, message=FALSE}
+dynam.prov  <- dynam.prov %>% 
+  mutate(
+    province_lbl = case_when(
+      province_lbl == 'Brussels Hoofdstedelijk Gewest' ~ 'Brussel',
+      TRUE ~ province_lbl))
+
+dynam.prov = dynam.prov %>%
+  mutate(
+    province_lbl_pct = str_c(province_lbl, '  (', str_sub(as.character(netto_pct*100),1,4), '%', ')'))
+
+province_lbl_ordered <- dynam.prov %>%
+  arrange(netto_pct) %>% # rangschik procentuele of absolute groei
+  # arrange(absoluut_netto) %>%
+  pull(province_lbl_pct)
+
+    
+dynam.prov = dynam.prov %>%
+    mutate(province_lbl_pct = factor(province_lbl_pct, levels = province_lbl_ordered))
+
+
+```
+
+```{r, fig.width=8, fig.height=6, fig.align='center'}
+# Overlapping barcharts:
+# http://stephanieevergreen.com/overlapping-bars/
+# https://gist.github.com/hrbrmstr/035f998517de2384e9962cff7df874bd
+# 
+
+gg <- ggplot(data=dynam.prov, aes(y=province_lbl_pct, yend=province_lbl_pct))
+gg <- gg + geom_segment(aes(x=absoluut_bruto_afname, xend=0, color="Jobverlies"), size=10)
+gg <- gg + geom_segment(aes(x=absoluut_bruto_toename, xend=0, color="Jobgroei"), size=5)
+gg <- gg + scale_x_continuous(labels=function(x) format(x, decimal.mark = ',', big.mark = ".", scientific = FALSE))
+gg <- gg + scale_color_manual(name=NULL, values=c(Jobverlies="#bebebf", Jobgroei="#1074bc"))
+gg <- gg + guides(color=guide_legend(keywidth=0, override.aes=list(size=4)))
+gg <- gg + labs(
+  x=NULL, y=NULL,
+  title="Alle provincies kennen een netto jobaangroei, met de grootste\nprocentuele groei in Namen",
+  subtitle = 'Procentuele en absolute jobevolutie per provincie, 2016-2017',
+  caption="Bron: HIVA-KU Leuven | DynaM | dynamresearch.be")
+gg <- gg + theme_minimal()
+gg <- gg + theme(axis.text.x=element_text(margin=margin(t=0)))
+gg <- gg + theme(axis.text.y=element_text(margin=margin(r=-10)))
+gg <- gg + theme(panel.grid.minor=element_blank())
+gg <- gg + theme(panel.grid.major.y=element_blank())
+gg <- gg + theme(plot.title=element_text(face="bold"))
+gg <- gg + theme(plot.margin=margin(20,20,20,20))
+gg <- gg + theme(plot.caption=element_text(size=8, margin=margin(t=10, r=0)))
+gg <- gg + theme(legend.position=c(0.8, 0.9))
+gg <- gg + theme(legend.direction="vertical")
+gg <- gg + theme(legend.background=element_rect(fill="white", color="white"))
+gg
 ```
 
 
