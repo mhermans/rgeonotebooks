@@ -1,6 +1,10 @@
 ---
-title: "Quick visualisation of unsorted US West Coast NP photos"
-output: html_notebook
+title: "Quick visualisation of US West Coast NP photos"
+author: "Maarten Hermans - @hermansm"
+output: 
+  html_notebook: 
+    toc: yes
+    toc_float: yes
 ---
 
 ```{r, message=FALSE}
@@ -75,13 +79,23 @@ p.coord + geom_density2d() + geom_point() + labs(
 # Interactive map with clustered points
 
 ```{r}
-m.vsphotos <- leaflet() %>%
+# set photo markers from Font Awesome library
+icons <- awesomeIcons(
+  icon = 'fa-camera-retro ',
+  iconColor = 'black',
+  library = 'fa'
+  # markerColor = getColor(df.20)
+)
+
+m.vsphotos <- leaflet(meta.vsphotos, width = '100%') %>%
   addTiles() %>% 
-  addMarkers(
-    lng=meta.vsphotos$longitude, 
-    lat=meta.vsphotos$latitude, 
-    clusterOptions = markerClusterOptions())
+  addAwesomeMarkers(
+    lng=~longitude, 
+    lat=~latitude, 
+    icon=icons,
+    clusterOptions = markerClusterOptions()) # enable point clustering
 ```
+
 
 ```{r}
 m.vsphotos
