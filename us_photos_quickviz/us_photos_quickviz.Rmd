@@ -1,0 +1,89 @@
+---
+title: "Quick visualisation of unsorted US West Coast NP photos"
+output: html_notebook
+---
+
+```{r, message=FALSE}
+library(exifr) # for photo EXIF-metadata, needs exiftool installed
+library(dplyr)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+```
+
+# Read in and process EXIF photo metadata
+
+```{r}
+# get list of paths to photos
+fn.vsphotos <- list.files(
+  '/home/rstudio/var/data/20180519_vsreis_photos_backup/',
+  # '/media/mhermans/6238-3434/DCIM/100MSDCF/' # direct path SD-card
+  full.names = TRUE)
+```
+
+```{r, message=FALSE}
+# get EXIF photo metadata 
+meta.vsphotos.raw <- as_tibble(exifr(fn.vsphotos))
+```
+
+In total there are `r nrow(meta.vsphotos.raw)` photos with `r ncol(meta.vsphotos.raw)` metadata variables.
+
+```{r}
+dim(meta.vsphotos.raw)
+```
+
+
+```{r}
+meta.vsphotos.raw %>% tail() # print last six records
+```
+
+
+```{r}
+meta.vsphotos <-meta.vsphotos.raw %>%
+  # select & rename needed variables
+  select(datetime = 'GPSDateTime', latitude = 'GPSLatitude', longitude = 'GPSLongitude') %>%
+  # drop pictures w/o coords & those taken still in BE (east of Greenwich)
+  filter(!is.na(latitude), longitude < 0 ) %>%
+  # convert GPS timestamps to datetime objects
+  mutate(datetime = ymd_hms(datetime))
+```
+
+In total there are `r nrow(meta.vsphotos)` with coordinates-information registered.
+
+```{r}
+meta.vsphotos %>% head() # print first six records
+```
+
+# Basic descriptive graphs
+
+```{r}
+p.date <- ggplot(meta.vsphotos, aes(x=datetime))
+p.date + geom_histogram(binwidth = 5000) + labs(
+  x = NULL, y = NULL, title = 'Peaked frequency of photo-taking follows hiking/driving pattern',
+  subtitle = 'Number of photos taken over time during US-trip of West Coast National Parks'
+)
+```
+
+
+```{r}
+p.coord <- ggplot(meta.vsphotos, aes(x = longitude, y = latitude, color = datetime))
+p.coord + geom_density2d() + geom_point() + labs(
+  title = 'Coordinates scatterplot shows general trajectory:\nstart in SF, up to Yellowstone, and ending in Denver '
+)
+```
+
+# Interactive map with clustered points
+
+```{r}
+m.vsphotos <- leaflet() %>%
+  addTiles() %>% 
+  addMarkers(
+    lng=meta.vsphotos$longitude, 
+    lat=meta.vsphotos$latitude, 
+    clusterOptions = markerClusterOptions())
+```
+
+```{r}
+m.vsphotos
+```
+
