@@ -2,8 +2,10 @@
 title: "Dynam jobevolutie kaartjes"
 output: 
   html_notebook: 
-    code_folding: show
+    code_folding: hide
+    number_sections: yes
     theme: lumen
+    toc: yes
 ---
 
 ```{r, message=FALSE, warning=FALSE}
@@ -18,16 +20,20 @@ library(leaflet.minicharts)
 library(htmltools)
 library(ggplot2)
 library(stringr)
+library(htmlwidgets)
+library(here)
 ```
+
+# Read in dynam and spatial data
 
 ```{r}
 dynam.prov = read_excel(
     '20180425_dynam_be_jobdata_origineel.xlsx', 'Sheet2',
     skip = 1,  col_names = c(
       'province_lbl', 'province_nis_code', 
-      'absoluut_bruto_toename', 'absoluut_bruto_afname', 'absoluut_netto', 'delme',
-      'delmetoo', 'bruto_toename_pct', 'bruto_afname_pct', 'netto_pct')) %>%
-  select(-delme, -delmetoo)
+      'bruto_toename_absoluut', 'bruto_afname_absoluut', 'netto_absoluut', 'delme',
+      'delmetoo', 'bruto_toename_graad', 'bruto_afname_graad', 'netto_graad', 'delmetootoo', 'werkzaamheidsgraad')) %>%
+  select(-delme, -delmetoo, -delmetootoo)
 ```
 
 ```{r}
@@ -43,10 +49,10 @@ dynam.prov  <- dynam.prov %>%
 
 dynam.prov = dynam.prov %>%
   mutate(
-    province_lbl_pct = str_c(province_lbl, '    ', str_sub(as.character(netto_pct*100),1,4), '%'))
+    province_lbl_pct = str_c(province_lbl, '    ', str_sub(as.character(netto_graad*100),1,4), '%'))
 
 province_lbl_ordered <- dynam.prov %>%
-  arrange(netto_pct) %>% # rangschik procentuele of absolute groei
+  arrange(netto_graad) %>% # rangschik procentuele of absolute groei
   # arrange(absoluut_netto) %>%
   pull(province_lbl_pct)
 
@@ -54,47 +60,15 @@ province_lbl_ordered <- dynam.prov %>%
 dynam.prov = dynam.prov %>%
     mutate(province_lbl_pct = factor(province_lbl_pct, levels = province_lbl_ordered))
 
-
-```
-
-```{r, fig.width=8, fig.height=6, fig.align='center'}
-# Overlapping barcharts:
-# http://stephanieevergreen.com/overlapping-bars/
-# https://gist.github.com/hrbrmstr/035f998517de2384e9962cff7df874bd
-# 
-
-gg <- ggplot(data=dynam.prov, aes(y=province_lbl_pct, yend=province_lbl_pct))
-gg <- gg + geom_segment(aes(x=absoluut_bruto_afname, xend=0, color="Jobverlies"), size=10)
-gg <- gg + geom_segment(aes(x=absoluut_bruto_toename, xend=0, color="Jobgroei"), size=5)
-gg <- gg + scale_x_continuous(labels=function(x) format(x, decimal.mark = ',', big.mark = ".", scientific = FALSE))
-gg <- gg + scale_color_manual(name=NULL, values=c(Jobverlies="#bebebf", Jobgroei="#1074bc"))
-gg <- gg + guides(color=guide_legend(keywidth=0, override.aes=list(size=4)))
-gg <- gg + labs(
-  x=NULL, y=NULL,
-  title="Alle provincies kennen een netto jobaangroei, met de grootste\nprocentuele groei in Namen",
-  subtitle = 'Procentuele en absolute jobevolutie per provincie, 2016-2017',
-  caption="Bron: HIVA-KU Leuven | DynaM | dynamresearch.be")
-gg <- gg + theme_minimal()
-gg <- gg + theme(axis.text.x=element_text(margin=margin(t=0)))
-gg <- gg + theme(axis.text.y=element_text(margin=margin(r=-10)))
-gg <- gg + theme(panel.grid.minor=element_blank())
-gg <- gg + theme(panel.grid.major.y=element_blank())
-gg <- gg + theme(plot.title=element_text(face="bold"))
-gg <- gg + theme(plot.margin=margin(20,20,20,20))
-gg <- gg + theme(plot.caption=element_text(size=8, margin=margin(t=10, r=0)))
-gg <- gg + theme(legend.position=c(0.8, 0.9))
-gg <- gg + theme(legend.direction="vertical")
-gg <- gg + theme(legend.background=element_rect(fill="white", color="white"))
-gg
-```
-
-
-```{r, warning=FALSE}
 dynam.prov = dynam.prov %>%
   mutate(
-    netto_pct = netto_pct*100,
-    absoluut_bruto_afname = absoluut_bruto_afname*-1)
+    netto_pct = netto_graad*100,
+    bruto_toename_pct = bruto_toename_graad*100,
+    bruto_afname_pct = bruto_afname_graad*100,
+    bruto_afname_absoluut_neg = bruto_afname_absoluut*-1)
+
 ```
+
 
 ```{r}
 data('BE_ADMIN_PROVINCE') 
@@ -122,21 +96,299 @@ provinces = provinces %>%
 ```
 
 
+```{r, warning=FALSE}
+# get centroid coordinates for each province to plot barchart there
+provinces_coords = as_tibble(st_coordinates(st_centroid(provinces)))
+names(provinces_coords) <- c('centroid_long', 'centroid_lat')
+provinces <- bind_cols(provinces, provinces_coords)
+```
+
+# Descriptive graphs
+
+## Overlapping barchart example
+
+```{r, fig.width=8, fig.height=6, fig.align='center'}
+# Overlapping barcharts:
+# http://stephanieevergreen.com/overlapping-bars/
+# https://gist.github.com/hrbrmstr/035f998517de2384e9962cff7df874bd
+# 
+
+gg <- ggplot(data=dynam.prov, aes(y=province_lbl_pct, yend=province_lbl_pct))
+gg <- gg + geom_segment(aes(x=bruto_afname_absoluut, xend=0, color="Jobverlies"), size=10)
+gg <- gg + geom_segment(aes(x=bruto_toename_absoluut, xend=0, color="Jobgroei"), size=5)
+gg <- gg + scale_x_continuous(labels=function(x) format(x, decimal.mark = ',', big.mark = ".", scientific = FALSE))
+gg <- gg + scale_color_manual(name=NULL, values=c(Jobverlies="#bebebf", Jobgroei="#1074bc"))
+gg <- gg + guides(color=guide_legend(keywidth=0, override.aes=list(size=4)))
+gg <- gg + labs(
+  x=NULL, y=NULL,
+  title="Alle provincies kennen een netto jobaangroei, met de grootste\nprocentuele groei in Namen",
+  subtitle = 'Procentuele en absolute jobevolutie per provincie, 2016-2017',
+  caption="Bron: HIVA-KU Leuven | DynaM | dynamresearch.be")
+gg <- gg + theme_minimal()
+gg <- gg + theme(axis.text.x=element_text(margin=margin(t=0)))
+gg <- gg + theme(axis.text.y=element_text(margin=margin(r=-10)))
+gg <- gg + theme(panel.grid.minor=element_blank())
+gg <- gg + theme(panel.grid.major.y=element_blank())
+gg <- gg + theme(plot.title=element_text(face="bold"))
+gg <- gg + theme(plot.margin=margin(20,20,20,20))
+gg <- gg + theme(plot.caption=element_text(size=8, margin=margin(t=10, r=0)))
+gg <- gg + theme(legend.position=c(0.8, 0.9))
+gg <- gg + theme(legend.direction="vertical")
+gg <- gg + theme(legend.background=element_rect(fill="white", color="white"))
+gg
+```
+
+# Static map visualisations
+
+## Inkleuren bruto toename
+
+```{r}
+tm_shape(provinces) +
+  tm_polygons(col = 'bruto_toename_pct', palette = 'Greens', border.col = 'white', title = 'Bruto jobtoename (%)')
+```
+
+## Inkleuren bruto afname
+
+```{r}
+tm_shape(provinces) +
+  tm_polygons(col = 'bruto_afname_pct', palette = 'Reds', border.col = 'white', title = 'Bruto jobafname (%)')
+```
+
+## Inkleuren netto evolutie
+
+```{r}
+tm_shape(provinces) +
+  tm_polygons(col = 'netto_pct', palette = 'Greens', border.col = 'white', title = 'Netto jobevolutie (%)')
+```
+
+## Inkleuren bruto jobtoename + exact cijfer
+
+```{r}
+tm_shape(provinces %>% mutate(bruto_toename_pct = round(bruto_toename_pct, 2))) +
+  tm_polygons(col = 'bruto_toename_pct', palette = 'Greens', border.col = 'white', title = 'Bruto jobtoename (%)') +
+  tm_text('bruto_toename_pct', size= .7)
+```
+
+## Inkleuren bruto jobafname + exact cijfer
+
+```{r}
+tm_shape(provinces %>% mutate(bruto_afname_pct = round(bruto_afname_pct, 2))) +
+  tm_polygons(col = 'bruto_afname_pct', palette = 'Reds', border.col = 'white', title = 'Bruto jobafname (%)') +
+  tm_text('bruto_afname_pct', size= .7)
+```
+
+## Inkleuren netto evolutie + exact cijfer
+
+```{r}
+tm_shape(provinces %>% mutate(netto_pct = round(netto_pct, 2))) +
+  tm_polygons(col = 'netto_pct', palette = 'Greens', border.col = 'white', title = 'Netto jobevolutie (%)') +
+  tm_text('netto_pct', size= .7)
+```
+
+# Interactive map visualisations
+
+## Achtergrondkleur netto-evolutie (%) + cijfers in mouse-over popup
+
+```{r}
+bins <- c(0.0, 0.5, 1, 1.5, 2.0, 2.5)
+pal_greens_netto <- colorBin("Greens", domain = provinces$netto_pct, bins = bins)
+
+provinces <- provinces %>%
+  mutate(popup_lbl = str_glue("<h3>{province_lbl}</h3><br /><b>Jobtoename: </b>{netto_pct}"))
+
+labels <- sprintf(
+  "<strong>%s</strong><br/>Jobtoename: %1.2f%%<br/>Jobafname: %1.2f%%<br/>Netto evolutie: %1.2f%%<br/>",
+  provinces$province_lbl, provinces$bruto_toename_pct, provinces$bruto_afname_pct, provinces$netto_pct
+) %>% lapply(htmltools::HTML)
+
+map_title <- tags$div(
+  HTML('<b>Netto jobevolutie per provincie, 2015-2016 (<a href="https://dynamresearch.be/">dynaM</a>)</b>')
+)  
+
+m.dynam.prov.netto.hover <- leaflet(provinces) %>%
+  # setView(-96, 37.8, 4) %>%
+  addPolygons(
+    fillColor = ~pal_greens_netto(netto_pct),
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlight = highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto")) %>%
+  addLegend(
+    title = 'Jobevolutie (%)',
+    pal = pal_greens_netto, values = ~netto_pct, opacity = 0.7,
+            position = "topright") %>%
+  addControl(map_title, position = "bottomleft")
+
+m.dynam.prov.netto.hover
+```
+
+## Achtergrondkleur bruto-toename (%) + cijfers in mouse-over popup
+
+```{r}
+bins <- c(4, 5, 6, 7, 8)
+pal_greens_toename <- colorBin("Greens", domain = provinces$bruto_toename_pct, bins = bins)
+
+map_title <- tags$div(
+  HTML('<b>Bruto jobtoename per provincie, 2015-2016 (<a href="https://dynamresearch.be/">dynaM</a>)</b>')
+)
+
+m.dynam.prov.toename.hover <- leaflet(provinces) %>%
+  # setView(-96, 37.8, 4) %>%
+  addPolygons(
+    fillColor = ~pal_greens_toename(bruto_toename_pct),
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlight = highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto")) %>%
+  addLegend(
+    title = 'Bruto jobtoename (%)',
+    pal = pal_greens_toename, values = ~bruto_toename_pct, opacity = 0.7,
+            position = "topright") %>%
+  addControl(map_title, position = "bottomleft")
+
+m.dynam.prov.toename.hover
+```
+
+## Achtergrondkleur bruto-afname (%) + cijfers in mouse-over popup
+
+```{r}
+bins <- c(4, 5, 6, 7, 8)
+pal_greens_afname <- colorBin("Reds", domain = provinces$bruto_toename_pct, bins = bins)
+
+map_title <- tags$div(
+  HTML('<b>Bruto jobafname per provincie, 2015-2016 (<a href="https://dynamresearch.be/">dynaM</a>)</b>')
+)
+
+m.dynam.prov.afname.hover <- leaflet(provinces) %>%
+  # setView(-96, 37.8, 4) %>%
+  addPolygons(
+    fillColor = ~pal_greens_afname(bruto_toename_pct),
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlight = highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto")) %>%
+  addLegend(
+    title = 'Bruto jobafname (%)',
+    pal = pal_greens_afname, values = ~bruto_toename_pct, opacity = 0.7,
+            position = "topright") %>%
+  addControl(map_title, position = "bottomleft")
+
+m.dynam.prov.afname.hover
+```
+
+## Achtergrondkleur netto-evolutie (%) + cijfers in mouse-over popup + netto-cijfer weergeven
+
+```{r}
+bins <- c(0.0, 0.5, 1, 1.5, 2.0, 2.5)
+pal_greens_netto <- colorBin("Greens", domain = provinces$netto_pct, bins = bins)
+
+provinces <- provinces %>%
+  mutate(popup_lbl = str_glue("<h3>{province_lbl}</h3><br /><b>Jobtoename: </b>{netto_pct}"))
+
+labels <- sprintf(
+  "<strong>%s</strong><br/>Jobtoename: %1.2f%%<br/>Jobafname: %1.2f%%<br/>Netto evolutie: %1.2f%%<br/>",
+  provinces$province_lbl, provinces$bruto_toename_pct, provinces$bruto_afname_pct, provinces$netto_pct
+) %>% lapply(htmltools::HTML)
+
+map_title <- tags$div(
+  HTML('<b>Netto jobevolutie per provincie, 2015-2016 (<a href="https://dynamresearch.be/">dynaM</a>)</b>')
+)  
+
+m.dynam.prov.netto.hover.number <- leaflet(provinces) %>%
+  # setView(-96, 37.8, 4) %>%
+  addPolygons(
+    fillColor = ~pal_greens_netto(netto_pct),
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlight = highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto")) %>%
+  addLegend(
+    title = 'Jobevolutie (%)',
+    pal = pal_greens_netto, values = ~netto_pct, opacity = 0.7,
+            position = "topright") %>%
+  addControl(map_title, position = "bottomleft")
+
+m.dynam.prov.netto.hover.number = m.dynam.prov.netto.hover.number %>%
+  addLabelOnlyMarkers(lng = ~centroid_long, lat = ~centroid_lat, 
+                      label =  ~as.character(round(netto_pct,2)), 
+                      labelOptions = labelOptions(noHide = T, direction = 'top', textOnly = T))
+
+m.dynam.prov.netto.hover.number
+
+```
+
+
+## Achtergrond nettoevolutie + clickable barchart met absolute evolutie 
+
 ```{r}
 pal <- colorBin("Greens", domain = dynam.prov$netto_pct)
 ```
 
-```{r, warning=FALSE}
-# get centroid coordinates for each province to plot barchart there
-provinces_coords = st_coordinates(st_centroid(provinces))
-```
 
 ```{r}
 d.abs = dynam.prov %>%
   select(
-    'Jobgroei' = absoluut_bruto_toename,
-    'Jobverlies' = absoluut_bruto_afname,
-    'Netto jobevolutie' = absoluut_netto)
+    'Jobgroei' = bruto_toename_absoluut,
+    'Jobverlies' = bruto_afname_absoluut_neg,
+    'Netto jobevolutie' = netto_absoluut)
+
+d.pct = dynam.prov %>%
+  mutate(
+    bruto_toename_pct = round(bruto_toename_pct,2),
+    bruto_afname_pct = round(bruto_afname_pct*-1,2),
+    netto_pct = round(netto_pct,2)) %>%
+select(
+  'Jobgroei' = bruto_toename_pct,
+  'Jobverlies' = bruto_afname_pct,
+  'Netto jobevolutie' = netto_pct)
 ```
 
 
@@ -158,14 +410,14 @@ m.prov = leaflet(provinces, width = '100%') %>%
     opacity = 1,
     dashArray = "3",
     fillColor = ~pal(netto_pct), color = 'white') %>% 
-  addLegend(pal = pal, values = ~absoluut_netto, opacity = 0.7,
+  addLegend(pal = pal, values = ~netto_absoluut, opacity = 0.7,
             title = 'Netto jobevolutie (%)',
   position = "bottomright")
 
 colors <- c("#7cae00", "#f8766d", "#c77cff")
 m.prov = m.prov %>%
   addMinicharts(
-    provinces_coords[,1], provinces_coords[,2],
+    provinces_coords$centroid_long, provinces_coords$centroid_lat,
     chartdata = d.abs,
     colorPalette = colors,
     width = 45, height = 45)
@@ -179,5 +431,49 @@ m.prov = m.prov %>%
 
 m.prov
 
+```
+
+
+```{r}
+m.dyam.bar.netto.pct = leaflet(provinces, width = '100%') %>% 
+  # add grey arrondissement polygons w/t white border
+  addPolygons(
+    weight = 2,
+    opacity = 1,
+    dashArray = "3",
+    fillColor = ~pal(netto_pct), color = 'white') %>% 
+  addLegend(pal = pal, values = ~netto_pct, opacity = 0.7,
+            title = 'Netto jobevolutie (%)',
+  position = "bottomright")
+
+colors <- c("#7cae00", "#f8766d", "#c77cff")
+m.dyam.bar.netto.pct = m.dyam.bar.netto.pct %>%
+  addMinicharts(
+    provinces_coords$centroid_long, provinces_coords$centroid_lat,
+    chartdata = d.pct,
+    colorPalette = colors,
+    width = 45, height = 45)
+
+map_title <- tags$div(
+   HTML('<b>Bruto en netto jobevolutie per provincie, 2017-2018 (<a href="https://dynamresearch.be/">DynaM</a>)</b>')
+ )  
+
+m.dyam.bar.netto.pct = m.dyam.bar.netto.pct %>% 
+  addControl(map_title, position = "bottomleft")
+
+m.dyam.bar.netto.pct
+
+```
+
+```{r}
+# saveWidget(
+#   m.dynam.prov, file = here::here('dynam_jobevolution', 'dynam_netto_map_selfcontained.html'), 
+#   selfcontained = TRUE,
+#   background = 'white')
+# 
+# saveWidget(
+#   m.dynam.prov, file = here::here('dynam_jobevolution', 'dynam_netto_map_notselfcontained.html'), 
+#   selfcontained = FALSE,
+#   background = 'white')
 ```
 
