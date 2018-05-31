@@ -1,0 +1,181 @@
+---
+title: "Manipulating GPX tracks and points with sf"
+output: html_notebook
+---
+
+```{r, message=FALSE}
+library(leaflet)
+library(dplyr)
+library(rgdal)
+library(purrr)
+library(sf)
+library(lubridate)
+library(ggplot2)
+library(zoo)
+library(cowplot)
+```
+
+
+```{r}
+bryce.track <- st_as_sf(readOGR(
+  dsn = "20180512_us_bryce_hike_11h50m36s.gpx", layer = "tracks", verbose = FALSE))
+bryce.trackpoints <- st_as_sf(readOGR(
+  dsn = "20180512_us_bryce_hike_11h50m36s.gpx", layer = "track_points", verbose = FALSE))
+```
+
+
+```{r}
+leaflet(bryce.track) %>%
+  addTiles() %>%
+  addPolylines()
+```
+
+```{r}
+leaflet(bryce.trackpoints) %>%
+  addTiles() %>%
+  addCircles()
+```
+
+```{r}
+M.dist <- st_distance(bryce.trackpoints, bryce.trackpoints)
+bryce.trackpoints = bryce.trackpoints %>%
+  mutate(
+    timestamp = with_tz(ymd_hms(time), 'MST7MDT'), # Bryce Canyon -> Mountain Time met DS?
+    distance_pairwise = c(0,diag(M.dist[,-1])),
+    timediff_pairwise = c(0,difftime(tail(timestamp, -1), head(timestamp, -1))),
+    speed = distance_pairwise / timediff_pairwise) %>%
+  mutate(speed = ifelse(is.na(speed), 0, speed)) # 0 instead of NaN at first point in dataset
+```
+
+
+```{r}
+p.speed <- ggplot(bryce.trackpoints, aes(x = timestamp, y = speed))
+p.speed <- p.speed + geom_point()
+p.speed
+```
+
+```{r}
+pal <- colorNumeric(
+  palette = "RdYlGn",
+  domain = bryce.trackpoints$speed,
+  reverse = TRUE)
+
+leaflet(bryce.trackpoints ) %>%
+  addTiles() %>%
+  addCircles(color = ~pal(speed))
+```
+
+```{r}
+p.speed %+% (bryce.trackpoints %>% slice(1:300)) + 
+  geom_line() + labs(
+    x = NULL, y = NULL, 
+    title = 'Speed before timestamp 12:15h indicates movement by bus', 
+    subtitle = 'Movement speed in m/s for the first 300 tracked points')
+```
+
+```{r}
+timestamp_cutoff = ymd_hms('2018-05-12 12:15:00', tz = 'MST7MDT')
+
+p.speed %+% (bryce.trackpoints %>% filter(timestamp> timestamp_cutoff))
+```
+
+```{r}
+bryce.trackpoints.hike = bryce.trackpoints %>% 
+  filter(timestamp > timestamp_cutoff, speed < 2.5)
+```
+
+```{r}
+pal <- colorNumeric(
+  palette = "RdYlGn",
+  domain = bryce.trackpoints.hike$speed,
+  reverse = TRUE)
+
+leaflet(bryce.trackpoints.hike) %>%
+  addTiles() %>%
+  addCircles(color = ~pal(speed))
+```
+
+```{r}
+bryce.trackpoints.hike <- bryce.trackpoints.hike %>%
+  mutate(speed_rollmean = rollmean(speed, k = 3, align = 'center', fill = 'extend'))
+```
+
+```{r}
+p.speedcomparison <- ggplot(bryce.trackpoints.hike, aes(x = timestamp))
+p1 <- p.speedcomparison + geom_point(aes(y = speed_rollmean)) + geom_line(aes(y = speed_rollmean)) + ylim(0, 2.5) + labs(title = 'Smoothed speed', x = NULL, y = NULL)
+p2 <- p.speedcomparison + geom_point(aes(y = speed)) + geom_line(aes(y = speed)) + ylim(0, 2.5) + labs(title = 'Original speed', x = NULL, y = NULL)
+plot_grid(p2, p1, align = 'v', axis = 'l')
+```
+
+```{r}
+pal <- colorNumeric(
+  palette = "RdYlGn",
+  domain = bryce.trackpoints.hike$speed_rollmean,
+  reverse = TRUE)
+
+leaflet(bryce.trackpoints.hike) %>%
+  addTiles() %>%
+  addCircles(color = ~pal(speed_rollmean))
+```
+
+
+```{r}
+p.elevation <- ggplot(bryce.trackpoints.hike, aes(x = timestamp, y =ele))
+p.elevation + geom_line() + labs(x = NULL, y = NULL, title = '', subtitle = 'Elevation in meters during the Bryce NP hike')
+```
+
+```{r}
+pal <- colorNumeric(
+  palette = "RdYlGn",
+  domain = bryce.trackpoints.hike$ele,
+  reverse = TRUE)
+
+leaflet(bryce.trackpoints.hike) %>%
+  addTiles() %>%
+  addCircles(color = ~pal(ele))
+```
+
+```{r}
+leaflet(bryce.trackpoints.hike) %>%
+  addProviderTiles('OpenTopoMap') %>%
+  addCircles(color = ~pal(ele))
+```
+
+```{r}
+p.elespeed <- ggplot(bryce.trackpoints.hike, aes(x = timestamp, y = ele, color = speed_rollmean))
+p.elespeed + geom_point() + scale_colour_distiller(palette = 'RdYlBu')                   
+```
+
+```{r}
+# bryce.track
+bryce.track.hike = bryce.trackpoints.hike  %>% st_coordinates() %>% st_linestring() %>% st_sfc(crs = bryce.track %>% st_crs())
+bryce.track.hike
+```
+
+
+```{r}
+leaflet(bryce.track.hike) %>%
+  addTiles() %>%
+  addPolylines()
+```
+
+
+```{r}
+# 
+# 
+# wd <- getwd()
+# setwd(Sys.getenv('DATADIR_HIVA_LOCAL'))
+# 
+# hikes.fn <- list.files('hikedata/2018_april_usa/', full.names = TRUE)
+# 
+# tracks <- hikes.fn %>%
+#   map(readOGR, layer = 'tracks', verbose = FALSE) %>%
+#   map(st_as_sf)
+# 
+# track_points <- st_as_sf(readOGR(hikes.fn[4], layer = 'track_points'))
+# 
+# trip <- do.call(rbind, tracks)
+# setwd(wd)
+# rm(wd)
+```
+
