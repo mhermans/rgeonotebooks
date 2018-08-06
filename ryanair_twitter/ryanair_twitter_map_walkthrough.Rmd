@@ -55,12 +55,17 @@ ht_ryanairstrike <- ht_ryanairstrike %>%
 ht_huelgaRyanair <- ht_huelgaRyanair %>%
   mutate(querystring = "#HuelgaRyanair")
 
-tweets <- bind_rows(
+ryanair_tweets <- bind_rows(
   ht_huelgaRyanair,
   ht_ryanair,
   ht_ryanairstrike)
 
 ```
+
+```{r}
+dim(ryanair_tweets)
+```
+
 
 This resulted in 9.043 tweets, taking into account that the non-paying twitter API only allows query go back a week in time. To err on the side of caution and given the behaviour of Ryanair-management, I'm not putting the individual-level crawed data online for this R notebook.
 
@@ -78,13 +83,6 @@ ryanair_tweets_userinfo <- readRDS(file.path(Sys.getenv('DATADIR_HIVA_LOCAL'), '
 ```
 
 
-```{r, eval=FALSE}
-ryanair_tweets <- readRDS('20180801_ryanair_tweets.rds')
-```
-
-```{r}
-dim(ryanair_tweets)
-```
 
 ```{r}
 head(ryanair_tweets)
