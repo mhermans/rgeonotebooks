@@ -1,0 +1,173 @@
+---
+title: "Mapping the #RyanairStrike / #HuelgaRyanair on Twitter"
+author: Maarten Hermans | @hermansm
+date: 2018-01-01
+output: html_notebook
+---
+
+Ryanair workers in Belgium, Italy, Portugal and Spain went on strike the 25-26th of August, in protest against working conditions and mangements' unwillingness to engage in collective bargaining. After threats of retaliation against employees that went on strike, Belgian and Swedish trade unions gave an additional stike notification for the 10th of August, with German and Dutch unions potentially joining.
+
+In this quick walkthrough, we crawl recent tweets on this transnational strike using the R-package [rtweet](https://rtweet.info/), geo-code the location of those tweeting with [ggmap](https://github.com/dkahle/ggmap) and plot those locations on an interactive map using [leaflet](https://rstudio.github.io/leaflet/).
+
+```{r, message=FALSE}
+library(rtweet)
+library(leaflet)
+library(ggmap)
+library(ggplot2)
+library(dplyr, warn.conflicts = FALSE)
+```
+
+Using the rtweet package and after initialising a Twitter app to get the required token-information, we queried Twitter on 2018-01-01 for hashtags the hashtags "[#HuelgaRyanair](https://twitter.com/hashtag/HuelgaRyanair)", "[#Ryanair](https://twitter.com/hashtag/Ryanair)", and "[#RyanairStrike](https://twitter.com/hashtag/RyanairStrike)". 
+
+```{r, eval=FALSE}
+# create an Twitter token with the proper app-permissions
+token = create_token(
+  app = '<app name>',
+  consumer_key = 'sLcHGjP...',
+  consumer_secret = 'eAIYIIaR...',
+  access_token= "...0TAt7IPe",
+  access_secret = "...VuGbFKXtcJzrniT",
+  set_renv = FALSE)
+
+ht_ryanair <- search_tweets(
+  "#ryanair", n = 18000, include_rts = FALSE,
+  token = token,
+  retryonratelimit = TRUE
+)
+
+ht_ryanairstrike <- search_tweets(
+  "#Ryanairstrike", n = 18000, include_rts = TRUE,
+  token = token,
+  retryonratelimit = TRUE
+)
+
+ht_huelgaRyanair <- search_tweets(
+  "#HuelgaRyanair", n = 18000, include_rts = FALSE,
+  token = token,
+  retryonratelimit = TRUE
+)
+
+# Add the querystring / hashtag as a variable
+ht_ryanair <- ht_ryanair %>%
+  mutate(querystring = "#ryanair")
+ht_ryanairstrike <- ht_ryanairstrike %>%
+  mutate(querystring = "#Ryanairstrike")
+ht_huelgaRyanair <- ht_huelgaRyanair %>%
+  mutate(querystring = "#HuelgaRyanair")
+
+tweets <- bind_rows(
+  ht_huelgaRyanair,
+  ht_ryanair,
+  ht_ryanairstrike)
+
+```
+
+This resulted in 9.043 tweets, taking into account that the non-paying twitter API only allows query go back a week in time. To err on the side of caution and given the behaviour of Ryanair-management, I'm not putting the individual-level crawed data online for this R notebook.
+
+```{r, echo=FALSE}
+library(assertr)
+ryanair_tweets <- readRDS(file.path(Sys.getenv('DATADIR_HIVA_LOCAL'), '/twitter/20180101_twitter_crawl_ryanair/20180801_ryanair_tweets.rds')) %>%
+  verify(dim(.) == c(9043, 89))
+
+ryanair_tweets_geocoded <- readRDS(file.path(Sys.getenv('DATADIR_HIVA_LOCAL'), '/twitter/20180101_twitter_crawl_ryanair/20180801_ryanair_tweets_geocoded.rds')) %>%
+  verify(dim(.) == c(9043, 91))
+
+ryanair_tweets_userinfo <- readRDS(file.path(Sys.getenv('DATADIR_HIVA_LOCAL'), '/twitter/20180101_twitter_crawl_ryanair/20180801_ryanair_users.rds')) %>%
+  verify(dim(.) == c(4868, 89))
+
+```
+
+
+```{r, eval=FALSE}
+ryanair_tweets <- readRDS('20180801_ryanair_tweets.rds')
+```
+
+```{r}
+dim(ryanair_tweets)
+```
+
+```{r}
+head(ryanair_tweets)
+```
+
+
+```{r}
+g.timeline <- ggplot(ryanair_tweets, aes(x = created_at, group = querystring, color = querystring))
+g.timeline + geom_freqpoly(binwidth = 35000) + 
+  labs(x = NULL, y = NULL, color = 'hashtag',
+       title = 'Both #ryanair and strike-related hashtags #HuelgaRyanair & #RyanairStrike\npeak during the 25-26th of August strike',
+       subtitle = 'Number of (re)tweets send, by timestamp and hashtag used')
+```
+
+We can derive the approximate location of the tweets, by geocoding the location-string Twitter-users entered in their public bio.
+
+```{r, eval=FALSE}
+users_id <- unique(ryanair_tweets$user_id)
+ryanair_tweets_userinfo <- lookup_users(users_id, token = token)
+
+ryanair_tweets_userinfo %>% 
+  select(location, followers_count, friends_count, account_lang, description) %>%
+  slice(1:6)
+```
+
+```{r, echo=FALSE}
+ryanair_tweets_userinfo %>% slice(1:6) %>% select(location, followers_count, friends_count, account_lang, description)
+```
+
+
+```{r, eval=FALSE}
+# only attempt to geocode users with non-empty location strings
+user_info_nomiss <- user_info %>%
+  filter(location != "")
+
+# geocode locations
+locations <- ggmap::geocode(user_info_nomiss$location)
+
+# merge geocode location info back in 
+user_info_nomiss <- bind_rows(
+  user_info_nomiss, 
+  locations)
+
+ryanair_tweets_geocoded <- left_join(
+  tweets, 
+  user_info_nomiss %>% select(user_id, lat, lon),
+  by = 'user_id')
+
+```
+
+```{r}
+ryanair_tweets_geocoded %>% filter(!is.na(lat)) %>% nrow
+```
+
+Of the 9.043 tweets, 4.334 where geocoded based on the users' location-string.
+
+```{r}
+ryanair_tweets_geocoded <- ryanair_tweets_geocoded %>% 
+  select(status_id, text, lat, lon) %>%
+  filter(!is.na(lat)) %>% # drop tweets in case they have missing coords
+  filter(status_id != '1022146717855227905') # remove one outlier, Antarctic supporter, for neater map
+```
+
+```{r}
+# get a plane-icon in the markers
+icons <- awesomeIcons(
+  icon = 'fa-plane ',
+  iconColor = 'black',
+  library = 'fa'
+)
+
+m.tweets <- leaflet(ryanair_tweets_geocoded, width = '100%') %>%
+  addTiles() %>% 
+  addAwesomeMarkers(
+    popup = ~text,
+    lng=~lon, 
+    lat=~lat, 
+    icon=icons,
+    clusterOptions = markerClusterOptions())
+```
+
+```{r}
+m.tweets %>% setView(lng = 11, lat = 10, zoom = 2)
+```
+
+
