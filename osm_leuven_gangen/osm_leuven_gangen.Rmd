@@ -1,0 +1,88 @@
+---
+title: "Using OSM-data and WSM-services for historical data and maps"
+output: html_notebook
+---
+
+
+```{r, warning=FALSE, message=FALSE}
+library(osmdata)
+library(stringr)
+library(dplyr)
+library(sf)
+library(mapview)
+library(leaflet)
+```
+
+Download all spatial features in a bounding box around Leuven from Open Street Maps, and filter on type 'highway' (streets?).
+
+```{r}
+q.leuven <- opq(bbox = 'Leuven, Belgium') %>%
+  add_osm_feature(key = 'highway') %>%
+  add_osm_feature(key = 'name') %>%
+  osmdata_sf()
+```
+
+Select all streets in Leuven which have "*gang*" in the streetname. 
+
+```{r, warning=FALSE}
+gangen = q.leuven$osm_lines %>%
+  select(name) %>%
+  filter(str_detect(name, 'gang') == TRUE)
+names(gangen$geometry) <- NULL # https://stackoverflow.com/a/50846998/125085
+```
+
+View all "gangen" in Leuven. Pop-up works for mapview(), TODO: fix on regular layer.
+
+```{r}
+mapview(gangen, color = 'blue')
+```
+
+Put the Ferrariskaart (1777) and the Vandermaele kaart (1846-1856) on two selectable layers, and center on Leuven.
+
+```{r}
+m.leuven <- leaflet() %>% 
+  setView(4.69839084, 50.880089, zoom = 14) %>%
+  addWMSTiles(
+    group = 'Ferrariskaart (1777)',
+    "https://geoservices.informatievlaanderen.be/raadpleegdiensten/histcart/wms",
+    layers = list("ferraris"),
+      options = WMSTileOptions(format = "image/png", transparent = FALSE),
+    attribution = "Source: GIS Geoservices Informatie Vlaanderen") %>%
+  addWMSTiles(
+    group = 'Kaart Vandermaelen (1846-1854)',
+    "https://geoservices.informatievlaanderen.be/raadpleegdiensten/histcart/wms",
+    layers = list("vandermaelen"),
+      options = WMSTileOptions(format = "image/png", transparent = FALSE),
+    attribution = "Source: GIS Geoservices Informatie Vlaanderen") %>%
+    addTiles(layerId = 'Kaart Leuven vandaag') %>%
+  addLayersControl(baseGroups = c('Kaart Vandermaelen (1846-1854)', 'Ferrariskaart (1777)', 'Kaart Leuven vandaag'))
+```
+
+```{r}
+m.leuven
+```
+
+Visualise the gangen on the base layer.
+
+```{r}
+leaflet(gangen) %>%
+  addTiles() %>%
+  addPolylines()
+```
+
+Visualise the gangen on the Ferraris and Vandermaele kaarten.
+
+```{r}
+m.leuven %>%
+  addPolylines(data = gangen)
+```
+
+# TODO: fix pop-ups with information about gangen
+
+```{r}
+mapview::addFeatures(map = m.leuven, 
+                           data = gangen, 
+                           weight = 6, 
+                           fillColor = 'purple', 
+                           color = 'purple')
+```
