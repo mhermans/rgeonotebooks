@@ -1,0 +1,46 @@
+---
+title: " #RyanairStrike / #HuelgaRyanair"
+author: Maarten Hermans | @hermansm
+output: html_notebook
+---
+
+Ryanair workers in Belgium, Italy, Portugal and Spain went on strike the 25-26th of August in protest against working conditions and mangements' unwillingness to engage in collective bargaining. After threats of retaliation against employees that went on strike, Belgian and Swedish trade unions gave an additional stike notification for the 10th of August, with German and Dutch unions potentially joining.
+
+Twitter-query on 2018-01-01 for hashtags "[#HuelgaRyanair](https://twitter.com/hashtag/HuelgaRyanair)", "[#Ryanair](https://twitter.com/hashtag/Ryanair)", and "[#RyanairStrike](https://twitter.com/hashtag/RyanairStrike)": 9.043 tweets, of which 4.334 geocoded on users' location-string.
+
+```{r, warning=FALSE, message=FALSE}
+library(readr)
+library(leaflet)
+library(dplyr, warn.conflicts = FALSE)
+```
+
+```{r}
+ryanair_tweets <- readRDS('20180713_ryanair_tweets_geocoded.rds')
+ryanair_tweets <- ryanair_tweets %>% 
+  select(status_id, text, lat, lon) %>%
+  filter(!is.na(lat)) %>%
+  filter(status_id != '1022146717855227905') # Antarctic supporter
+```
+
+```{r}
+icons <- awesomeIcons(
+  icon = 'fa-plane ',
+  iconColor = 'black',
+  library = 'fa'
+)
+
+m.tweets <- leaflet(ryanair_tweets, width = '100%') %>%
+  addTiles() %>% 
+  addAwesomeMarkers(
+    popup = ~text,
+    lng=~lon, 
+    lat=~lat, 
+    icon=icons,
+    clusterOptions = markerClusterOptions())
+```
+
+```{r}
+m.tweets %>% setView(lng = 11, lat = 10, zoom = 2)
+```
+
+
