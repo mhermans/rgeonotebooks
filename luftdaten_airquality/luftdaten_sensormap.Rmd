@@ -3,6 +3,8 @@ title: "Ludtdaten airquality data"
 output: html_document
 ---
 
+# Setup
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
@@ -46,6 +48,9 @@ sensor_data <- sensor_data %>%
     location_altitude = as.numeric(location_altitude),
     sensor_pin = as.integer(sensor_pin))
 ```
+
+
+# Map of worldwide Luftdaten sensors
 
 
 ```{r}
@@ -131,7 +136,7 @@ bxl_voronoi <- bxl_measurements  %>%
 
 
 ```{r}
-leaflet(bxl_voronoi) %>%
+leaflet(bxl_voronoi, width = '100%') %>%
   addTiles() %>%
   addPolygons() %>%
   addPolygons(data = bxl, color = 'grey')
@@ -163,7 +168,7 @@ bxl_voronoi_poly <- bxl_voronoi_poly %>%
                            <strong>PM10-value</strong>: {value} µg/m3<br/>'))
 
 #create the leaflet
-m_bxl_vonoroi <- leaflet(bxl_voronoi_poly) %>% 
+m_bxl_vonoroi <- leaflet(bxl_voronoi_poly, width = '100%') %>% 
   #addProviderTiles('Stamen.Toner') %>%
     addTiles() %>%
   addPolygons(fillColor = colors(bxl_voronoi_poly$value),

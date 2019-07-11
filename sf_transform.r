@@ -4,6 +4,7 @@ library(osmdata)
 library(leaflet)
 library(tmap)
 library(mapview)
+library(sf)
 
 # https://www.openstreetmap.org/way/26434944
 # https://www.openstreetmap.org/way/8611804
