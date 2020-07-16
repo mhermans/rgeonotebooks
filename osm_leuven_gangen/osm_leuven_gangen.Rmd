@@ -1,6 +1,8 @@
 ---
 title: "Using OSM-data and WSM-services for historical data and maps"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 
@@ -37,25 +39,50 @@ View all "gangen" in Leuven. Pop-up works for mapview(), TODO: fix on regular la
 mapview(gangen, color = 'blue')
 ```
 
+```{r}
+m.ferraris <- leaflet() %>% 
+  setView(4.69839084, 50.880089, zoom = 14) %>%
+  addWMSTiles(
+    group = 'Ferraris-map (1777)',
+    "https://geoservices.informatievlaanderen.be/raadpleegdiensten/histcart/wms",
+    layers = list("ferraris"),
+    options = WMSTileOptions(format = "image/png", transparent = FALSE),
+    attribution = "Source: GIS Geoservices Informatie Vlaanderen")
+m.ferraris
+```
+
+
+```{r}
+m.vandermaelen <- leaflet() %>% 
+  setView(4.69839084, 50.880089, zoom = 14) %>%
+  addWMSTiles(
+    group = 'Vandermaelen-map (1846-1854)',
+    "https://geoservices.informatievlaanderen.be/raadpleegdiensten/histcart/wms",
+    layers = list("vandermaelen"),
+    options = WMSTileOptions(format = "image/png", transparent = FALSE),
+    attribution = "Source: GIS Geoservices Informatie Vlaanderen")
+m.vandermaelen
+```
+
 Put the Ferrariskaart (1777) and the Vandermaele kaart (1846-1856) on two selectable layers, and center on Leuven.
 
 ```{r}
 m.leuven <- leaflet() %>% 
   setView(4.69839084, 50.880089, zoom = 14) %>%
   addWMSTiles(
-    group = 'Ferrariskaart (1777)',
+    group = 'Ferraris-map (1777)',
     "https://geoservices.informatievlaanderen.be/raadpleegdiensten/histcart/wms",
     layers = list("ferraris"),
-      options = WMSTileOptions(format = "image/png", transparent = FALSE),
+    options = WMSTileOptions(format = "image/png", transparent = FALSE),
     attribution = "Source: GIS Geoservices Informatie Vlaanderen") %>%
   addWMSTiles(
-    group = 'Kaart Vandermaelen (1846-1854)',
+    group = 'Vandermaelen-map (1846-1854)',
     "https://geoservices.informatievlaanderen.be/raadpleegdiensten/histcart/wms",
     layers = list("vandermaelen"),
-      options = WMSTileOptions(format = "image/png", transparent = FALSE),
+    options = WMSTileOptions(format = "image/png", transparent = FALSE),
     attribution = "Source: GIS Geoservices Informatie Vlaanderen") %>%
-    addTiles(layerId = 'Kaart Leuven vandaag') %>%
-  addLayersControl(baseGroups = c('Kaart Vandermaelen (1846-1854)', 'Ferrariskaart (1777)', 'Kaart Leuven vandaag'))
+  addTiles(layerId = 'Current map of Leuven') %>%
+  addLayersControl(baseGroups = c('Vandermaelen-map (1846-1854)', 'Ferraris-map (1777)', 'Current map of Leuven'))
 ```
 
 ```{r}
@@ -75,6 +102,7 @@ Visualise the gangen on the Ferraris and Vandermaele kaarten.
 ```{r}
 m.leuven %>%
   addPolylines(data = gangen)
+
 ```
 
 # TODO: fix pop-ups with information about gangen

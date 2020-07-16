@@ -1,0 +1,186 @@
+---
+title: "Ludtdaten airquality data"
+output: html_document
+---
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(jsonlite)
+library(dplyr)
+library(janitor)
+library(lubridate) # for ymd_hms()
+library(leaflet)
+library(htmltools) #for htmlEscape()
+library(glue)
+library(tidyr)
+library(purrr)
+library(sf)
+library(BelgiumMaps.StatBel)
+```
+
+
+
+```{r}
+# fetch all sensor data from Luftdaten API
+sensor_data <- fromJSON('http://api.luftdaten.info/static/v1/data.json', flatten = TRUE) %>%
+  as_tibble() %>%
+  clean_names()
+
+# fetch data for single sensor
+# sensor <- fromJSON('http://api.luftdaten.info/v1/sensor/8993/', flatten = TRUE) %>%
+#   as_tibble() %>%
+#   clean_names()
+```
+
+
+```{r}
+# fix some variable types
+sensor_data <- sensor_data %>%
+  mutate(
+    timestamp = ymd_hms(timestamp), 
+    location_latitude = as.numeric(location_latitude),
+    location_longitude = as.numeric(location_longitude),
+    location_altitude = as.numeric(location_altitude),
+    sensor_pin = as.integer(sensor_pin))
+```
+
+
+# Map of worldwide Luftdaten sensors
+
+
+```{r}
+# helper function to past measurment vars to single string
+paste_measurement_str <- function(measurements) {
+  measurement_str <- measurements %>%
+    mutate(measurement_str = paste0(value, " (", value_type, ")")) %>%
+    pull(measurement_str) %>%
+    paste(collapse = ', ')  
+  
+  return(measurement_str)
+}
+```
+
+
+```{r}
+
+sensor_data_unique <- sensor_data %>% 
+  distinct(sensor_id, .keep_all = TRUE) %>%
+  mutate(measurement_str = map(sensordatavalues, paste_measurement_str)) %>%
+  mutate(popup_html = glue('<strong>Sensor ID</strong>: {sensor_id}<br/>
+                           <strong>Location ID</strong>: {location_id}<br/>
+                           <strong>Timestamp</strong>: {timestamp}<br/>
+                           <strong>Measurements</strong>: {measurement_str}<br/>'))
+```
+
+```{r}
+# set custom marker-icon from Font Awesome library
+icons <- awesomeIcons(
+  icon = 'fa-thermometer-half',
+  iconColor = 'black',
+  library = 'fa'
+)
+
+m_sensors <- leaflet(sensor_data_unique, width = '100%') %>%
+  addTiles() %>%
+  addAwesomeMarkers(
+    lng = ~location_longitude, lat = ~location_latitude,
+    popup = ~popup_html,
+    icon = icons,
+    clusterOptions = markerClusterOptions())
+```
+
+
+
+```{r}
+m_sensors
+```
+
+# Voronoi map of fine dust readings in Brussels
+
+```{r}
+data("BE_ADMIN_REGION")
+region <- st_as_sf(BE_ADMIN_REGION)
+bxl <- region %>% filter(CD_RGN_REFNIS == "4000")
+```
+
+
+https://stackoverflow.com/a/55236074/125085
+
+```{r}
+measurements_data <- sensor_data %>%
+  unnest() %>%
+  distinct(location_id, sensor_id, value_type, .keep_all = TRUE) %>%
+  mutate(value = as.numeric(value))
+
+measurements_data <- st_as_sf(
+  measurements_data, coords = c("location_longitude", "location_latitude"), 
+  crs = 4326, agr = "constant")
+
+bxl_measurements <- measurements_data %>%
+  filter(lengths(st_within(measurements_data, bxl)) == 1) %>%
+  filter(value_type == 'P1') # se
+```
+
+
+```{r}
+bxl_voronoi <- bxl_measurements  %>% 
+  st_union() %>%
+  st_voronoi() %>%
+  st_collection_extract()
+```
+
+
+```{r}
+leaflet(bxl_voronoi, width = '100%') %>%
+  addTiles() %>%
+  addPolygons() %>%
+  addPolygons(data = bxl, color = 'grey')
+```
+
+
+```{r}
+#do a spatial join with the original bw_sf data frame to get the data back
+bxl_voronoi_poly <- st_cast(st_buffer(bxl_voronoi, 0)) %>% 
+  st_intersection(bxl) %>%
+  st_sf() %>%
+  st_join(bxl_measurements, join = st_contains)
+```
+
+
+Evaluation error: TopologyException: Input geom 0 is invalid: Self-intersection at or near point ...
+
+```{r}
+#create a palette (many ways to do this step)
+colors <- colorNumeric(
+  palette = 'Reds',
+  reverse = FALSE,
+  domain = bxl_voronoi_poly$value)
+
+bxl_voronoi_poly <- bxl_voronoi_poly %>%
+  mutate(popup_html = glue('<strong>Sensor ID</strong>: {sensor_id}<br/>
+                           <strong>Location ID</strong>: {location_id}<br/>
+                           <strong>Timestamp</strong>: {timestamp}<br/>
+                           <strong>PM10-value</strong>: {value} µg/m3<br/>'))
+
+#create the leaflet
+m_bxl_vonoroi <- leaflet(bxl_voronoi_poly, width = '100%') %>% 
+  #addProviderTiles('Stamen.Toner') %>%
+    addTiles() %>%
+  addPolygons(fillColor = colors(bxl_voronoi_poly$value),
+              fillOpacity = 0.7, color = 'grey',
+              weight = 1,
+              popup = ~popup_html)
+```
+
+
+
+```{r}
+m_bxl_vonoroi
+```
+
+
