@@ -1,28 +1,38 @@
 ---
-title: "Manipulating GPX tracks and points with sf"
+title: "Manipulating GPX tracks and points with sf and dplyr"
 output: html_notebook
 ---
+
+Topics illustrated in this worked example:
+
+* Read in data from files in the [GPS Exchange Format](https://en.wikipedia.org/wiki/GPS_Exchange_Format) (GPX).
+* Convert measurement units with functions from the units library.
+* 
+
+# Load libraries and read-in GPX-data
+
 
 ```{r, message=FALSE}
 library(leaflet)
 library(dplyr)
-library(rgdal)
-library(purrr)
 library(sf)
 library(lubridate)
 library(ggplot2)
 library(zoo)
 library(cowplot)
+library(scales)
 ```
 
+Using `st_read()` from [the sf library](https://www.jessesadler.com/post/simple-feature-objects/), read in the GPX-file of a hike in Bryce Canyon National Park (clone the [Github repository](https://github.com/mhermans/rgeonotebooks), or [download the file directly](https://raw.githubusercontent.com/mhermans/rgeonotebooks/master/sf_track_manipulation/20180512_us_bryce_hike_11h50m36s.gpx)).
 
 ```{r}
-bryce.track <- st_as_sf(readOGR(
-  dsn = "20180512_us_bryce_hike_11h50m36s.gpx", layer = "tracks", verbose = FALSE))
-bryce.trackpoints <- st_as_sf(readOGR(
-  dsn = "20180512_us_bryce_hike_11h50m36s.gpx", layer = "track_points", verbose = FALSE))
+bryce.track <- st_read("20180512_us_bryce_hike_11h50m36s.gpx", layer = "tracks")
+bryce.trackpoints <- st_read("20180512_us_bryce_hike_11h50m36s.gpx", layer = "track_points")
 ```
 
+The track-layer contains a single spatial feature, a MULTILINESTRING of the whole tracked visit to Bryce Canyon NP. The trackpoints-layer contains `nrow(bryce.trackpoints)` POINTS as spatial features. These points, on which the track is based, have the associated tracked data such as coodinates, elevation, timestamp, etc.   
+
+Make an interactive map of the track and the trackpoints using [leaflet](https://rstudio.github.io/leaflet/): 
 
 ```{r}
 leaflet(bryce.track) %>%
@@ -36,23 +46,42 @@ leaflet(bryce.trackpoints) %>%
   addCircles()
 ```
 
+# Datacleaning: filter out the shuttle-transport
+
+The tracked GPS-data unfortunately contain not only the Bryce NP hike, but also the shuttle transport to the trailhead. We want to filter that first part out, and work with the data of only the hike. To do so, we calculate the speed at each tracked point to determine the timestamp-cutoff after which the actual hike started. 
+
+First we get the pairwise distance and duration from the GPS-timestamps and coordinates. E.g. comparing the first point with the second, the second with the third, etc. A shorthand to do so, is droping for vector one the last value with `head(x, -1)` and for the second vector dropping the first value with `tail(x, -1)`. Comparing these two vectors and prepending a zero for the first point, gives us full vectors of distances and timedifferences.
+
+
+
 ```{r}
-M.dist <- st_distance(bryce.trackpoints, bryce.trackpoints)
 bryce.trackpoints = bryce.trackpoints %>%
   mutate(
-    timestamp = with_tz(ymd_hms(time), 'MST7MDT'), # Bryce Canyon -> Mountain Time met DS?
-    distance_pairwise = c(0,diag(M.dist[,-1])),
+    # convert the time string to a lubridate datetime object w/t proper timezone. 
+    timestamp = with_tz(ymd_hms(time), 'MST7MDT'), 
+    distance_pairwise = c(0, st_distance(head(geometry, -1), tail(geometry, -1), by_element = TRUE)),
     timediff_pairwise = c(0,difftime(tail(timestamp, -1), head(timestamp, -1))),
     speed = distance_pairwise / timediff_pairwise) %>%
-  mutate(speed = ifelse(is.na(speed), 0, speed)) # 0 instead of NaN at first point in dataset
+  mutate(speed = ifelse(is.na(speed), 0, speed)) # set 0 speed instead of NaN at first point in dataset
+```
+
+```{r}
+ggplot(bryce.trackpoints, aes(x = speed)) + geom_density() +
+  scale_x_continuous(breaks=c(0,2.5,5,10,15)) +
+  geom_vline(xintercept = 2.5) + labs(
+    title = 'Speeds above 2,5m/s are likely mismeaured or during shuttle-ride',
+    subtitle = 'Kernel density plot of speed values in meters per secord during Bryce NP-visit')
 ```
 
 
 ```{r}
 p.speed <- ggplot(bryce.trackpoints, aes(x = timestamp, y = speed))
 p.speed <- p.speed + geom_point()
-p.speed
+p.speed + labs(
+  title = 'Speeds above 2,5m/s are concentrated at the start during shuttleride',
+  subtitle = 'Measured speed over the duration of the Bryce NP-visit')
 ```
+
 
 ```{r}
 pal <- colorNumeric(
@@ -69,14 +98,25 @@ leaflet(bryce.trackpoints ) %>%
 p.speed %+% (bryce.trackpoints %>% slice(1:300)) + 
   geom_line() + labs(
     x = NULL, y = NULL, 
-    title = 'Speed before timestamp 12:15h indicates movement by bus', 
-    subtitle = 'Movement speed in m/s for the first 300 tracked points')
+    title = 'Speed before timestamp 12:12h indicates movement by shuttle', 
+    subtitle = 'Movement speed in m/s for the first 300 tracked points of Bryce NP-visit') +
+  scale_x_datetime(
+    labels = date_format(format = '%H:%M', tz = 'MST7MDT'),
+    breaks = c(
+      min(bryce.trackpoints$timestamp), 
+      ymd_hms('2018-05-12 12:12:00', tz = 'MST7MDT'), 
+      ymd_hms('2018-05-12 12:40:00', tz = 'MST7MDT')))
 ```
 
 ```{r}
-timestamp_cutoff = ymd_hms('2018-05-12 12:15:00', tz = 'MST7MDT')
+timestamp_cutoff = ymd_hms('2018-05-12 12:12:00', tz = 'MST7MDT')
 
-p.speed %+% (bryce.trackpoints %>% filter(timestamp> timestamp_cutoff))
+p.speed %+% (bryce.trackpoints %>% filter(timestamp> timestamp_cutoff)) +
+  labs(
+    x = NULL, y = NULL,
+    title = 'After dropping points registered during shuttle-ride,\nthere are only outliers above 2,5m/s',
+    subtitle = 'Movement speed in meter per second during Bryce NP-hike',
+    caption = 'Note: the GPS-tracker does not register points when stationary, thus the blank intervals.')
 ```
 
 ```{r}
@@ -148,15 +188,53 @@ p.elespeed + geom_point() + scale_colour_distiller(palette = 'RdYlBu')
 
 ```{r}
 # bryce.track
-bryce.track.hike = bryce.trackpoints.hike  %>% st_coordinates() %>% st_linestring() %>% st_sfc(crs = bryce.track %>% st_crs())
+bryce.track.hike = bryce.trackpoints.hike  %>% 
+  st_coordinates() %>% # get coordinates of all points 
+  st_linestring() %>%  # convert coordinates to a linestring simple feature
+  # make simple feature collection of linestring, with the projection info of the original track
+  st_sfc(crs = st_crs(bryce.track))  
+
 bryce.track.hike
 ```
+
 
 
 ```{r}
 leaflet(bryce.track.hike) %>%
   addTiles() %>%
   addPolylines()
+```
+
+# Hiking distance, time and speed with units
+
+With the cleaned linestring simple feature, we can get the distance hiked using `st_lenght()`. It returns the value with the unit of measurement, in this case meters. Rather than dividing by 1.000, we can do proper unit conversion using `set_units()` from the [units library](https://cran.r-project.org/web/packages/units/vignettes/measurement_units_in_R.html). 
+
+```{r}
+st_length(bryce.track.hike)
+```
+
+```{r}
+hike.distance.total = set_units(st_length(bryce.track.hike), 'km')
+hike.distance.total
+```
+
+The base function `difftime()` gives us the time difference between the last and first timestamp of the hike, while `as_units()` converts it to a duration measurement-format compatible with the `units`-library. 
+
+```{r}
+hike.time.total = as_units(difftime(
+  max(bryce.trackpoints.hike$timestamp), 
+  min(bryce.trackpoints.hike$timestamp)))
+hike.time.total
+```
+
+
+
+```{r}
+hike.distance.total / hike.time.total
+```
+
+```{r}
+set_units(hike.distance.total, 'm') / set_units(hike.time.total, 's')
 ```
 
 
