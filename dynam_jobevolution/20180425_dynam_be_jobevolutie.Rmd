@@ -192,7 +192,7 @@ tm_shape(provinces %>% mutate(netto_pct = round(netto_pct, 2))) +
 dynam.prov.bruto.nl = tm_shape(provinces %>% mutate(bruto_toename_pct_lbl = str_sub(as.character(bruto_toename_pct), 1,3))) +
   tm_polygons(col = 'bruto_toename_pct', palette = 'Greens', border.col = 'white', title = 'Bruto jobtoename (%)') +
   tm_text('bruto_toename_pct_lbl', size= .7)  +
-  tm_layout(legend.format = list(text.separator = "-"))
+  tm_layout(legend.format = list(text.separator = "-"), frame = FALSE)
 dynam.prov.bruto.nl
 ```
 
@@ -202,11 +202,19 @@ dynam.prov.bruto.nl
 dynam.prov.bruto.fr = tm_shape(provinces %>% mutate(bruto_toename_pct_lbl = str_sub(as.character(bruto_toename_pct), 1,3))) +
   tm_polygons(col = 'bruto_toename_pct', palette = 'Greens', border.col = 'white', title = 'Augmentation brute (%)') +
   tm_text('bruto_toename_pct_lbl', size= .7) +
-  tm_layout(legend.format = list(text.separator = "à"))
+  tm_layout(legend.format = list(text.separator = "à"), frame = FALSE)
 dynam.prov.bruto.fr
 ```
 
 # Interactive map visualisations
+
+```{r}
+labels_nl <- sprintf(
+  "<strong>%s</strong><br/>Jobtoename: %1.2f%%<br/>Jobafname: %1.2f%%<br/>Netto evolutie: %1.2f%%<br/>",
+  provinces$province_lbl_nl, provinces$bruto_toename_pct, provinces$bruto_afname_pct, provinces$netto_pct
+) %>% lapply(htmltools::HTML)
+```
+
 
 ## Achtergrondkleur netto-evolutie (%) + cijfers in mouse-over popup
 
@@ -216,11 +224,6 @@ pal_greens_netto <- colorBin("Greens", domain = provinces$netto_pct, bins = bins
 
 # provinces <- provinces %>%
 #   mutate(popup_lbl = str_glue("<h3>{province_lbl_nl}</h3><br /><b>Jobtoename: </b>{netto_pct}"))
-
-labels_nl <- sprintf(
-  "<strong>%s</strong><br/>Jobtoename: %1.2f%%<br/>Jobafname: %1.2f%%<br/>Netto evolutie: %1.2f%%<br/>",
-  provinces$province_lbl_nl, provinces$bruto_toename_pct, provinces$bruto_afname_pct, provinces$netto_pct
-) %>% lapply(htmltools::HTML)
 
 map_title <- tags$div(
   HTML('<b>Netto jobevolutie per provincie, 2015-2016 (<a href="https://dynamresearch.be/">Dynam-Reg</a>)</b>')
@@ -262,7 +265,7 @@ bins <- c(4, 5, 6, 7, 8)
 pal_greens_toename <- colorBin("Greens", domain = provinces$bruto_toename_pct, bins = bins)
 
 map_title <- tags$div(
-  HTML('<b>Bruto jobtoename per provincie, 2015-2016 (<a href="https://dynamresearch.be/">Dynam-Reg</a>)</b>')
+  HTML('<b>Bruto jobtoename per provincie, 2015-2016 (<a href="http://www.dynam-belgium.org">Dynam-Reg</a>)</b>')
 )
 
 m.dynam.prov.toename.hover.nl <- leaflet(provinces) %>%
@@ -306,7 +309,7 @@ labels_fr <- sprintf(
 ) %>% lapply(htmltools::HTML)
 
 map_title <- tags$div(
-  HTML('<b>Augmentation brute par province, 2015-2016 (<a href="https://dynamresearch.be/">Dynam-Reg</a>)</b>')
+  HTML('<b>Augmentation brute par province, 2015-2016 (<a href="http://www.dynam-belgium.org">Dynam-Reg</a>)</b>')
 )
 
 m.dynam.prov.toename.hover.fr <- leaflet(provinces) %>%
@@ -531,13 +534,22 @@ m.dyam.bar.netto.pct
 ```
 
 ```{r}
-# saveWidget(
-#   m.dynam.prov, file = here::here('dynam_jobevolution', 'dynam_netto_map_selfcontained.html'), 
-#   selfcontained = TRUE,
-#   background = 'white')
-# 
-# saveWidget(
-#   m.dynam.prov, file = here::here('dynam_jobevolution', 'dynam_netto_map_notselfcontained.html'), 
-#   selfcontained = FALSE,
-#   background = 'white')
+saveWidget(
+  m.dynam.prov.toename.hover.nl, file = here::here(
+    'dynam_jobevolution/maps_interactive', 'dynam_bruto_map_notselfcontained_nl.html'),
+  selfcontained = FALSE,
+  background = 'white')
+
+saveWidget(
+  m.dynam.prov.toename.hover.fr, file = here::here(
+    'dynam_jobevolution/maps_interactive', 
+    'dynam_bruto_map_notselfcontained_fr.html'),
+  selfcontained = FALSE,
+  background = 'white')
 ```
+
+```{r}
+save_tmap(dynam.prov.bruto.nl, here::here('dynam_jobevolution/images', 'dynam_bruto_nl.png'))
+save_tmap(dynam.prov.bruto.fr, here::here('dynam_jobevolution/images', 'dynam_bruto_fr.png'))
+```
+
